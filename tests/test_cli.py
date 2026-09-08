@@ -1,3 +1,5 @@
+import argparse
+
 import pytest
 
 from handy import cli
@@ -16,10 +18,19 @@ def test_every_tool_is_well_formed(tool):
 
 
 def test_parser_exposes_each_tool_as_a_subcommand():
-    parser = cli.build_parser()
+    """Every tool gets a subparser wired to its own run(). Checked without
+    parsing an empty argv, since a tool is free to have required arguments."""
+    choices = _subparser_choices(cli.build_parser())
     for tool in cli.discover_tools():
-        args = parser.parse_args([tool.name])
-        assert args._run is tool.module.run
+        assert tool.name in choices, f"{tool.name} has no subparser"
+        assert choices[tool.name].get_default("_run") is tool.module.run
+
+
+def _subparser_choices(parser):
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return action.choices
+    raise AssertionError("the handy parser has no subcommands")
 
 
 def test_no_command_prints_help_and_fails(capsys):
