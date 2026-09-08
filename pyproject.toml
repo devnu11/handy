@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "A collection of small Python tools that do handy things."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.11.1",
+]
 
 [project.scripts]
 handy = "handy.cli:main"
