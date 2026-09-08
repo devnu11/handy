@@ -11,6 +11,7 @@ personal access token as a bearer credential.
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import urllib.error
 import urllib.parse
@@ -141,6 +142,48 @@ def encode_multipart(
     parts.append(content)
     parts.append(f"\r\n--{boundary}--\r\n".encode())
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def find_attachment(client: Client, page_id: str, filename: str) -> dict[str, Any] | None:
+    """Return the existing attachment with this filename, if the page has one."""
+    response = client.get(f"/rest/api/content/{page_id}/child/attachment", {"filename": filename})
+    results = response.get("results") or []
+    return results[0] if results else None
+
+
+def upload_attachment(
+    client: Client,
+    page_id: str,
+    filename: str,
+    content: bytes,
+    comment: str = "",
+) -> tuple[str, bool]:
+    """Create or replace the named attachment. Returns (attachment id, replaced?)."""
+    existing = find_attachment(client, page_id, filename)
+    if existing:
+        path = f"/rest/api/content/{page_id}/child/attachment/{existing['id']}/data"
+    else:
+        path = f"/rest/api/content/{page_id}/child/attachment"
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    response = client.upload(
+        path,
+        filename=filename,
+        content=content,
+        content_type=content_type,
+        fields={"comment": comment, "minorEdit": "true"},
+    )
+    return _attachment_id(response, existing), bool(existing)
+
+
+def _attachment_id(response: Any, existing: dict[str, Any] | None) -> str:
+    """Dig the id out of whichever shape this Confluence version returned."""
+    if isinstance(response, dict):
+        results = response.get("results")
+        if results:
+            return str(results[0].get("id", ""))
+        if response.get("id"):
+            return str(response["id"])
+    return str((existing or {}).get("id", ""))
 
 
 def _snippet(body: bytes, limit: int = 200) -> str:

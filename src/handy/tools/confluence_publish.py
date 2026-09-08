@@ -8,11 +8,14 @@ what makes a weekly refresh a one-line cron job.
 from __future__ import annotations
 
 import argparse
-import mimetypes
 from pathlib import Path
-from typing import Any
 
-from handy.tools._atlassian import AtlassianError, Client, client_from_env
+from handy.tools._atlassian import (
+    AtlassianError,
+    Client,
+    client_from_env,
+    upload_attachment,
+)
 
 HELP = "upload an image to a Confluence page, replacing the existing attachment"
 
@@ -43,37 +46,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="report what would be uploaded without writing to Confluence",
     )
     parser.add_argument("--timeout", type=float, default=60.0, help="seconds per request")
-
-
-def find_attachment(client: Client, page_id: str, filename: str) -> dict[str, Any] | None:
-    """Return the existing attachment with this filename, if the page has one."""
-    response = client.get(f"/rest/api/content/{page_id}/child/attachment", {"filename": filename})
-    results = response.get("results") or []
-    return results[0] if results else None
-
-
-def upload_attachment(
-    client: Client,
-    page_id: str,
-    filename: str,
-    content: bytes,
-    comment: str = "",
-) -> tuple[str, bool]:
-    """Create or replace the named attachment. Returns (attachment id, replaced?)."""
-    existing = find_attachment(client, page_id, filename)
-    if existing:
-        path = f"/rest/api/content/{page_id}/child/attachment/{existing['id']}/data"
-    else:
-        path = f"/rest/api/content/{page_id}/child/attachment"
-    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    response = client.upload(
-        path,
-        filename=filename,
-        content=content,
-        content_type=content_type,
-        fields={"comment": comment, "minorEdit": "true"},
-    )
-    return _attachment_id(response, existing), bool(existing)
 
 
 def embed_markup(filename: str) -> str:
@@ -108,17 +80,6 @@ def ensure_embedded(client: Client, page_id: str, filename: str) -> bool:
         },
     )
     return True
-
-
-def _attachment_id(response: Any, existing: dict[str, Any] | None) -> str:
-    """Dig the id out of whichever shape this Confluence version returned."""
-    if isinstance(response, dict):
-        results = response.get("results")
-        if results:
-            return str(results[0].get("id", ""))
-        if response.get("id"):
-            return str(response["id"])
-    return str((existing or {}).get("id", ""))
 
 
 def run(args: argparse.Namespace) -> int:

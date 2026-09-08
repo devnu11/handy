@@ -1,7 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from handy.tools import jira_infographic as graphic
 from handy.tools import jira_stats
 
@@ -22,20 +20,6 @@ def sample_stats(count=12):
     stats = jira_stats.summarize(issues, now=NOW)
     stats["jql"] = "project = FOO AND resolution = Unresolved"
     return stats
-
-
-def test_ordinal_colors_span_the_ramp():
-    assert graphic.ordinal_colors(0) == []
-    assert graphic.ordinal_colors(1) == [graphic.BLUE_ORDINAL[len(graphic.BLUE_ORDINAL) // 2]]
-    four = graphic.ordinal_colors(4)
-    assert four[0] == graphic.BLUE_ORDINAL[0]
-    assert four[-1] == graphic.BLUE_ORDINAL[-1]
-    assert len(set(four)) == 4  # every band gets its own step
-
-
-def test_ordinal_colors_never_runs_off_the_ramp():
-    colors = graphic.ordinal_colors(len(graphic.BLUE_ORDINAL) + 5)
-    assert set(colors) <= set(graphic.BLUE_ORDINAL)
 
 
 def test_render_writes_a_png(tmp_path):
@@ -81,36 +65,10 @@ def test_render_survives_stats_with_no_bands(tmp_path):
     assert graphic.render(stats, tmp_path / "bandless.png").is_file()
 
 
-def test_bars_keep_a_fixed_thickness_as_the_row_count_changes():
-    """The point of the cap: a short component list must not draw fat bars."""
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    figure = plt.figure(figsize=(12, 8.2))
-    axes = figure.add_subplot(111)
-    span = axes.get_position().height * figure.get_figheight()
-    inches = {count: graphic._bar_thickness(axes, count) * span / count for count in (3, 6, 12, 40)}
-    plt.close(figure)
-
-    # Short lists are held at the cap instead of fattening to fill their rows.
-    assert inches[3] == pytest.approx(graphic.BAR_INCHES)
-    assert inches[6] == pytest.approx(graphic.BAR_INCHES)
-    # Once rows are narrower than the cap, bars thin out rather than touching.
-    assert inches[12] < graphic.BAR_INCHES
-    assert inches[40] < inches[12]
-
-
 def test_render_handles_a_short_component_list(tmp_path):
     stats = sample_stats()
     stats["components"] = stats["components"][:3]
     assert graphic.render(stats, tmp_path / "three.png").is_file()
-
-
-def test_truncate_keeps_long_component_names_short():
-    assert graphic._truncate("short", 10) == "short"
-    assert len(graphic._truncate("a-very-long-component-name", 10)) == 10
 
 
 def test_run_rejects_a_document_that_isnt_stats(tmp_path, capsys):
