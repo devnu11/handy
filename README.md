@@ -35,6 +35,9 @@ uv tool install --editable .
 | `jira-infographic` | Render the stats as a PNG infographic. |
 | `confluence-publish` | Upload an image to a Confluence page, replacing the old one. |
 | `jira-report` | All four of the above in one go, for cron. |
+| `conformance-report` | Report conformance pass rates against a minimum. |
+| `perf-report` | Compare performance measurements against expected values. |
+| `confluence-block` | Replace one named block of a Confluence page. |
 
 ## The Jira report pipeline
 
@@ -80,6 +83,89 @@ Notes on what the numbers mean:
   uploading `report.png` again replaces the image in place, and the page markup
   never changes. The first run appends an image macro to the page if the page
   doesn't already reference the attachment (`--no-embed` to skip that).
+
+## Conformance and performance reports
+
+Two generators that read a JSON file of results and write a PNG. Both also take
+`--summary` to dump the numbers they computed, and both exit non-zero when
+something is below its floor, so a CI step can fail on the same data the graphic
+is drawn from.
+
+```sh
+uv run handy conformance-report results.json -o conformance.png --minimum 0.999
+uv run handy perf-report metrics.json -o perf.png --tolerance 0.05
+```
+
+### Why these don't chart pass rates
+
+A pass rate is a bad primary scale. Suites here run from twenty tests to two
+million, so a 99.9% floor means "no failures allowed" in one suite and "two
+thousand" in another, and a 0.1% failure on a 100%-wide bar is under a pixel —
+clean and broken look identical. So:
+
+- The chart plots **error budget consumed** — `failed / ((1 - minimum) x tests)`
+  — which is comparable across every suite size. 100% means the floor is exactly
+  met.
+- Percentages carry **as many decimals as the suite size needs**, worked out
+  from `log10(tests)`. A single failure in 2.1M tests reads `99.99995%`, not
+  `100%`.
+- Any nonzero value is drawn at a **minimum visible length**, so one failure and
+  none never look the same. Exact counts sit in the table beside the chart.
+- Performance metrics are plotted as **deviation from their own expectation**,
+  signed so worse is always to the right whether the metric wants to go up or
+  down, with each metric's own tolerance marked on its row.
+
+### Input shapes
+
+Conformance — `failed` is derived when absent, and a bare list of suites works too:
+
+```json
+{
+  "source": "nightly conformance",
+  "minimum_pass_rate": 0.999,
+  "suites": [
+    {"name": "core", "total": 2100000, "passed": 2099878, "skipped": 0,
+     "minimum_pass_rate": 0.9999}
+  ]
+}
+```
+
+Performance — a metric compares against `target` when it has one and `baseline`
+otherwise, so fixed goals and last-run comparisons mix in one report:
+
+```json
+{
+  "source": "perf run 4821",
+  "tolerance": 0.05,
+  "metrics": [
+    {"name": "p99 latency", "value": 262, "unit": "ms", "target": 250,
+     "tolerance": 0.1, "lower_is_better": true},
+    {"name": "throughput", "value": 18400, "unit": " req/s", "baseline": 19000,
+     "lower_is_better": false}
+  ]
+}
+```
+
+## Publishing several reports on one page
+
+`confluence-publish` swaps a whole attachment; `confluence-block` rewrites one
+delimited region of a page, so several reports can share a page with text people
+wrote. Put markers in the page's storage format:
+
+```html
+<!-- handy:perf --><!-- /handy:perf -->
+```
+
+Then each job refreshes only its own block:
+
+```sh
+uv run handy confluence-block --page-id 123456 --name perf --image perf.png \
+  --caption 'Run 4821'
+```
+
+`--init` appends the marker pair on the first run. If a later run reports the
+markers missing, someone's rich-text edit stripped the HTML comments and the
+block needs `--init` again.
 
 ## Adding a tool
 
