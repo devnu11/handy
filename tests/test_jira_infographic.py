@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from handy.tools import jira_infographic as graphic
 from handy.tools import jira_stats
 
@@ -77,6 +79,33 @@ def test_render_survives_stats_with_no_bands(tmp_path):
     stats = sample_stats()
     stats["age_buckets"] = []
     assert graphic.render(stats, tmp_path / "bandless.png").is_file()
+
+
+def test_bars_keep_a_fixed_thickness_as_the_row_count_changes():
+    """The point of the cap: a short component list must not draw fat bars."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    figure = plt.figure(figsize=(12, 8.2))
+    axes = figure.add_subplot(111)
+    span = axes.get_position().height * figure.get_figheight()
+    inches = {count: graphic._bar_thickness(axes, count) * span / count for count in (3, 6, 12, 40)}
+    plt.close(figure)
+
+    # Short lists are held at the cap instead of fattening to fill their rows.
+    assert inches[3] == pytest.approx(graphic.BAR_INCHES)
+    assert inches[6] == pytest.approx(graphic.BAR_INCHES)
+    # Once rows are narrower than the cap, bars thin out rather than touching.
+    assert inches[12] < graphic.BAR_INCHES
+    assert inches[40] < inches[12]
+
+
+def test_render_handles_a_short_component_list(tmp_path):
+    stats = sample_stats()
+    stats["components"] = stats["components"][:3]
+    assert graphic.render(stats, tmp_path / "three.png").is_file()
 
 
 def test_truncate_keeps_long_component_names_short():

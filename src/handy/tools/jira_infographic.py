@@ -28,6 +28,15 @@ LABEL_LIMIT = 20
 # Gap between stacked segments, as a fraction of the widest bar (~2px here).
 SEGMENT_GAP = 0.004
 
+# Ceiling on bar thickness. Without it a bar is a fixed fraction of its row, so
+# a query returning a handful of components draws fat, heavy bars. Longer lists
+# fall back to the fraction and thin out as usual.
+BAR_INCHES = 0.36
+
+# Rows the component panel always reserves, so a short list keeps a sane row
+# pitch instead of stretching a handful of bars over the whole panel.
+MIN_COMPONENT_ROWS = 6
+
 # Blue ordinal ramp, steps 250-700. Age bands are ordered categories, so they
 # get the ramp; it starts at 250 because anything lighter fails contrast on a
 # light surface.
@@ -157,6 +166,8 @@ def _draw_components(axes: Any, components: list[dict[str, Any]], bands: list[st
     labels = [_truncate(item["name"], LABEL_LIMIT) for item in components]
     totals = [item["count"] for item in components]
     positions = range(len(components))
+    rows = max(len(components), MIN_COMPONENT_ROWS)
+    thickness = _bar_thickness(axes, rows)
     widest = max(totals) if totals else 1
     # White doing the separating: a small gap in the surface color between
     # segments, rather than a stroke drawn around each one.
@@ -166,7 +177,7 @@ def _draw_components(axes: Any, components: list[dict[str, Any]], bands: list[st
     for band, color in zip(bands, ordinal_colors(len(bands)), strict=True):
         widths = [item["age_buckets"].get(band, 0) for item in components]
         drawn = [width - gap if width > gap * 2 else width for width in widths]
-        axes.barh(positions, drawn, left=cursors, height=0.5, color=color, label=band)
+        axes.barh(positions, drawn, left=cursors, height=thickness, color=color, label=band)
         cursors = [start + width for start, width in zip(cursors, widths, strict=True)]
 
     for position, total in zip(positions, totals, strict=True):
@@ -179,12 +190,24 @@ def _draw_components(axes: Any, components: list[dict[str, Any]], bands: list[st
             color=INK_SECONDARY,
         )
     axes.set_yticks(list(positions), labels, fontsize=9.5, color=INK)
-    axes.invert_yaxis()
+    axes.set_ylim(rows - 0.5, -0.5)
     axes.set_xlim(0, widest * 1.14 or 1)
     axes.set_xticks([])
     _strip_chrome(axes, baseline="left")
     _band_legend(axes, len(bands))
     _panel_title(axes, "Issues by component, split by age in days")
+
+
+def _bar_thickness(axes: Any, count: int, along: str = "height") -> float:
+    """Thickness of one bar as a fraction of its band, capped at BAR_INCHES."""
+    figure = axes.get_figure()
+    position = axes.get_position()
+    if along == "height":
+        span = position.height * figure.get_figheight()
+    else:
+        span = position.width * figure.get_figwidth()
+    band = span / max(count, 1)
+    return min(0.5, BAR_INCHES / band) if band else 0.5
 
 
 def _band_legend(axes: Any, band_count: int) -> None:
@@ -222,7 +245,8 @@ def _draw_age_buckets(axes: Any, buckets: list[dict[str, Any]]) -> None:
         axes.set_axis_off()
         return
     positions = range(len(counts))
-    axes.bar(positions, counts, width=0.45, color=ordinal_colors(len(counts)))
+    width = _bar_thickness(axes, len(counts), along="width")
+    axes.bar(positions, counts, width=width, color=ordinal_colors(len(counts)))
     for position, bucket in zip(positions, buckets, strict=True):
         axes.text(
             position,
@@ -245,7 +269,7 @@ def _horizontal_bars(
     axes: Any, labels: list[str], values: list[float], color: str, value_labels: list[str]
 ) -> None:
     positions = range(len(labels))
-    axes.barh(positions, values, height=0.5, color=color)
+    axes.barh(positions, values, height=_bar_thickness(axes, len(labels)), color=color)
     widest = max(values) if values else 1
     for position, value, text in zip(positions, values, value_labels, strict=True):
         # Labels ride outside the bar end, so a short bar never clips its value.
