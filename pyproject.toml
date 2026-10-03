@@ -31,3 +31,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: starts real processes through a fake ssh (deselect with -m 'not integration')",
+]

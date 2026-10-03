@@ -38,6 +38,7 @@ uv tool install --editable .
 | `conformance-report` | Report conformance pass rates against a minimum. |
 | `perf-report` | Compare performance measurements against expected values. |
 | `confluence-block` | Replace one named block of a Confluence page. |
+| `servers` | Start, stop and watch servers on remote hosts over ssh. |
 
 ## The Jira report pipeline
 
@@ -166,6 +167,99 @@ uv run handy confluence-block --page-id 123456 --name perf --image perf.png \
 `--init` appends the marker pair on the first run. If a later run reports the
 markers missing, someone's rich-text edit stripped the HTML comments and the
 block needs `--init` again.
+
+## Servers on hosts you can't run services on
+
+`servers` is for environments where you may run processes but not install
+services: it ssh's to each host, starts your servers detached, and restarts them
+when they die. The remote hosts need only `sh` and `nohup` (and `tmux` for debug
+mode) — not Python, and not handy.
+
+```sh
+handy servers init        # create ~/.config/handy/servers with examples
+handy servers edit        # edit it; validated on save, offers to apply changes
+handy servers start       # start whatever isn't running
+handy servers status      # what's running where; changes nothing
+```
+
+### The config
+
+One server per line — `host:port name command` — in `~/.config/handy/servers`
+(or `$XDG_CONFIG_HOME/handy/servers`, or `--config PATH`):
+
+```
+# host:port          name   command
+compute01:8000       docs   cd ~/site && python3 -m http.server $PORT --bind 0.0.0.0
+
+# Long commands continue with a trailing backslash, as in bash.
+compute02:5173       ui     cd ~/app && \
+                            npm run dev -- --host 0.0.0.0 --port $PORT --strictPort
+```
+
+The command runs in a POSIX shell starting in `$HOME`, with `SERVER` and `PORT`
+exported. It's passed through verbatim, so chain steps with `&&`, `||` or `;`
+yourself. `user@host` works, as do ssh config aliases. Names become part of
+remote file names, so they're limited to letters, digits, `_`, `.` and `-`.
+
+The config is deliberately not part of any dotfiles repo: hostnames are often
+not something to publish.
+
+### Actions
+
+| Action | What it does |
+| --- | --- |
+| `start [NAME…] [--tmux] [--force] [--quiet]` | Start whatever is down; leave the rest alone. |
+| `stop [NAME…]` | Stop servers, including everything they spawned. |
+| `restart [NAME…] [--tmux]` | Stop, then start. |
+| `status [NAME…] [--json]` | Report state. Exits 0 only if everything is running or deliberately stopped. |
+| `logs NAME [-f] [-n N]` | Show the server's log. |
+| `attach NAME` | Attach to a server started with `--tmux`. |
+| `edit` | Edit the config; on a valid save, offer to restart, start and stop whatever changed. |
+| `init` | Create the config with commented-out examples. |
+| `test HOST [--tmux]` | Smoke-test a host end to end with a throwaway web server. |
+
+States: `running`, `starting` (up for under 10s, port not open yet),
+`unhealthy` (alive, but its port never opened — reported, never killed),
+`down`, `stopped` (stopped on purpose), `port-conflict` (something else holds
+the port — never started over), `unreachable`.
+
+### Behaviour worth knowing
+
+- **Rate limit.** A blanket `start` skips any host verified in the last 10
+  minutes and says so (`compute01: verified 3m ago, skipping`). `--force`
+  overrides it. Naming servers (`start docs`) always checks them, since that's
+  deliberate. Editing a host's lines invalidates its rate limit.
+- **One check per host.** Each host gets a single ssh session per run, and
+  concurrent runs coordinate through a lock, so several terminals opening at
+  once produce one check per host, not one each. Locks are directories, which
+  are atomic on NFS — a shared home directory makes the rate limit global across
+  machines.
+- **Never twice.** Starting goes through a lock *on the remote host*, so two
+  machines racing to start the same server still produce exactly one.
+- **`stop` sticks.** A stopped server stays down — even through the login hook —
+  until you start it by name or `restart` it.
+- **Detached.** By default servers run under `nohup` in their own process group,
+  so `stop` takes down everything they spawned (`npm run dev` and its children,
+  say). `--tmux` runs one in a tmux session instead, for debugging: `attach` to
+  it, and if it crashes, the pane stays open showing the exit status.
+- **Never prompts.** ssh runs with `BatchMode=yes`, so a host that needs a
+  password is reported `unreachable` rather than hanging. Set up key auth.
+
+### Restarting on login
+
+Run `handy servers start --quiet` from an interactive shell's startup and every
+new terminal repairs anything that crashed. It's safe to do so: the rate limit
+and per-host lock keep it cheap, and `--quiet` prints only starts and failures.
+Run it in the background so it never delays the prompt:
+
+```sh
+( nohup handy servers start --quiet >>~/.local/state/handy-servers/hook.log 2>&1 & )
+```
+
+Put it where only *interactive* shells read it (`~/.zshrc`, or after the
+interactive check in `~/.bashrc`): output from a non-interactive shell breaks
+`scp` and `rsync`. This only repairs things when you open a terminal; if cron is
+available, `handy servers start --quiet` works there too.
 
 ## Adding a tool
 

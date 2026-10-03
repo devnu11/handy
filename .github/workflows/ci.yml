@@ -22,4 +22,5 @@ jobs:
           UV_PYTHON: ${{ matrix.python-version }}
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - run: shellcheck -s sh src/handy/tools/_servers/remote.sh tests/fakes/ssh
       - run: uv run pytest

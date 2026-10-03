@@ -9,7 +9,7 @@ A collection of small, unrelated Python utilities exposed as subcommands of one
 
 ```sh
 uv sync                 # install deps into .venv
-uv run pytest           # tests
+uv run pytest           # tests (add -m 'not integration' to skip the slow ones)
 uv run ruff check .     # lint
 uv run ruff format .    # format
 uv run handy <tool>     # run a tool

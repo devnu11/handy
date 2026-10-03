@@ -1,0 +1,27 @@
+#!/bin/sh
+# A stand-in for ssh in the servers integration tests: drops ssh's options and
+# the host, then runs the remote command locally. FAKE_SSH_HOME becomes HOME
+# for the "remote" side, so tests can model one host or several machines
+# sharing it. Each call is logged to FAKE_SSH_LOG.
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	-o | -p | -l | -F | -i) shift 2 ;;
+	-*) shift ;;
+	*) break ;;
+	esac
+done
+host=$1
+shift
+
+[ -n "$FAKE_SSH_LOG" ] && printf '%s %s\n' "$host" "$*" >>"$FAKE_SSH_LOG"
+case $host in
+unreachable*)
+	echo "ssh: connect to host $host port 22: Connection refused" >&2
+	exit 255
+	;;
+esac
+
+[ -n "$FAKE_SSH_HOME" ] && HOME=$FAKE_SSH_HOME && export HOME && mkdir -p "$HOME"
+cd "$HOME" || exit 1
+exec sh -c "$*"
