@@ -1,6 +1,10 @@
 # handy
 
-A collection of small Python tools that do handy things.
+> If the women don't find you handsome, they should at least find you handy.
+> — Red Green, *The Red Green Show*
+
+A collection of small Python tools that do handy things. Think of it as the
+handyman's secret weapon, minus the duct tape.
 
 Every tool is a subcommand of a single `handy` CLI. Adding a new one means
 dropping a file into [`src/handy/tools/`](src/handy/tools/) — no registry to
@@ -294,6 +298,9 @@ Shared helpers that aren't tools go in `src/handy/util.py` — anything inside
 
 ## Development
 
+Possum Lodge motto, applicable to most debugging sessions: *Quando omni flunkus
+moritati* — when all else fails, play dead. Run the checks first:
+
 ```sh
 uv run pytest              # tests
 uv run ruff check .        # lint
@@ -302,3 +309,9 @@ uv run ruff format .       # format
 
 `tests/test_cli.py` checks every discovered tool against the contract above, so
 a malformed tool module fails the suite rather than the CLI.
+
+---
+
+Remember, I'm pulling for you. We're all in this together.
+
+Keep your stick on the ice.

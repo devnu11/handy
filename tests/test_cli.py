@@ -43,3 +43,10 @@ def test_version(capsys):
         cli.main(["--version"])
     assert excinfo.value.code == 0
     assert "handy" in capsys.readouterr().out
+
+
+def test_top_level_help_signs_off(capsys):
+    """`handy --help` ends with the Red Green sign-off."""
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    assert "Keep your stick on the ice." in capsys.readouterr().out
