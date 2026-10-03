@@ -29,6 +29,9 @@ from types import ModuleType
 
 from handy import __version__, tools
 
+# Shown under `handy --help`. Kept on its own lines, so the formatter must not rewrap it.
+SIGN_OFF = "Remember, I'm pulling for you. We're all in this together.\nKeep your stick on the ice."
+
 
 @dataclass(frozen=True)
 class Tool:
@@ -67,6 +70,8 @@ def build_parser(found: list[Tool] | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="handy",
         description="A collection of small Python tools that do handy things.",
+        epilog=SIGN_OFF,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"handy {__version__}")
     subparsers = parser.add_subparsers(dest="command", metavar="<tool>")
