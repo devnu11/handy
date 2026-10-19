@@ -261,11 +261,11 @@ def test_logs_show_output(env):
 
 def test_command_starts_in_the_directory(env):
     port = free_port()
-    (env.remote_home / "site").mkdir(parents=True)
-    env.write(f"localhost:{port} it-web ~/site pwd > {env.root / 'cwd'}; exec {SERVE}\n")
+    (env.remote_home / "my site").mkdir(parents=True)
+    env.write(f"localhost:{port} it-web '~/my site' pwd > {env.root / 'cwd'}; exec {SERVE}\n")
     assert "started" in env.cli("start").stdout
     assert wait_for(lambda: (env.root / "cwd").exists())
-    assert Path((env.root / "cwd").read_text().strip()).name == "site"
+    assert Path((env.root / "cwd").read_text().strip()).name == "my site"
 
 
 def test_missing_directory_is_reported(env):

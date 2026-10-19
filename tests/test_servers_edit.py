@@ -65,7 +65,10 @@ def test_invalid_edit_loops_until_fixed(tmp_path):
         say=said.append,
     )
     assert after[0].command == "fixed"
-    assert said == ["handy servers: servers:1: expected 'host:port name directory command'"]
+    assert said == [
+        "handy servers: servers:1: expected 'host:port name directory command' "
+        "(quote a directory that contains spaces)"
+    ]
 
 
 def test_quitting_leaves_file_invalid(tmp_path):

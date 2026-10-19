@@ -202,10 +202,12 @@ compute02:5173       ui     ~/app       npm run dev -- --host 0.0.0.0 --port $PO
 
 The command runs in a POSIX shell starting in the directory, with `SERVER` and
 `PORT` exported. The directory is `~`, `~/path`, a path relative to `$HOME`, or
-an absolute path; if it doesn't exist, the start fails and says so. The command
+an absolute path; if it doesn't exist, the start fails and says so. Quote a
+directory that contains spaces: `"~/my app"` or `'~/my app'`. The command
 is passed through verbatim, so chain steps with `&&`, `||` or `;` yourself.
 `user@host` works, as do ssh config aliases. Names become part of remote file
-names, so they're limited to letters, digits, `_`, `.` and `-`.
+names and the tmux session name, so they're limited to letters, digits, `_`, `.`
+and `-`: no spaces.
 
 The config is deliberately not part of any dotfiles repo: hostnames are often
 not something to publish.

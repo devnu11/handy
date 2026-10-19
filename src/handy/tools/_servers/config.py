@@ -17,6 +17,8 @@ from pathlib import Path
 _NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 # Hosts are interpolated into a generated shell script and ssh argv.
 _HOST = re.compile(r"(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_][A-Za-z0-9_.-]*")
+# A directory with spaces is quoted: "my dir" or 'my dir'. No escapes inside.
+_ENTRY = re.compile(r"""(\S+)\s+(\S+)\s+("[^"]*"|'[^']*'|[^\s"']\S*)\s+(.*\S)""")
 
 TEMPLATE = """\
 # handy servers — one server per line:
@@ -150,11 +152,19 @@ def _parse_entry(logical: str, lineno: int) -> Server:
 
 
 def _split_entry(logical: str) -> list[str]:
-    """The four columns; the command is everything after the directory."""
-    fields = logical.split(None, 3)
-    if len(fields) < 4:
-        raise ValueError("expected 'host:port name directory command'")
-    return [*fields[:3], fields[3].strip()]
+    """The four columns, with quotes taken off the directory; the command is
+    everything after the directory."""
+    match = _ENTRY.fullmatch(logical.strip())
+    if not match:
+        raise ValueError(
+            "expected 'host:port name directory command' (quote a directory that contains spaces)"
+        )
+    address, name, directory, command = match.groups()
+    return [address, name, _unquote(directory), command]
+
+
+def _unquote(field: str) -> str:
+    return field[1:-1] if field[:1] in "\"'" else field
 
 
 def _parse_address(address: str) -> tuple[str, int]:
@@ -178,6 +188,8 @@ def _check_name(name: str) -> None:
 
 def _check_directory(directory: str) -> None:
     """~user isn't supported: the remote side only knows its own $HOME."""
+    if not directory:
+        raise ValueError("directory is empty; use ~ for $HOME")
     if directory.startswith("~") and directory[1:2] not in ("", "/"):
         raise ValueError(f"directory {directory!r} should be ~, ~/path or a plain path")
 

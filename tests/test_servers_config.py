@@ -28,6 +28,16 @@ def test_workdir_is_relative_to_home_unless_absolute(directory, workdir):
     assert server.workdir == workdir
 
 
+@pytest.mark.parametrize(
+    ("column", "directory"),
+    [('"~/my site"', "~/my site"), ("'/srv/my site'", "/srv/my site"), ("'it\"s'", 'it"s')],
+)
+def test_quoted_directory_may_contain_spaces(column, directory):
+    (server,) = parse(f"h:1  a  {column}  run  it\n")
+    assert server.directory == directory
+    assert server.command == "run  it"
+
+
 def test_backslash_continues_like_bash():
     text = "h:1 ui ~ cd ~/app && \\\n    npm run dev --port $PORT\n"
     (server,) = parse(text)
@@ -71,6 +81,9 @@ def test_user_at_host():
         ("h:80 a/b ~ cmd", "name 'a/b'"),
         ("h'x:80 a ~ cmd", 'host "h\'x"'),
         ("h:80 docs ~/x", "expected 'host:port name directory command'"),
+        ('h:80 docs "~/my site cmd', "expected 'host:port name directory command'"),
+        ('h:80 docs "~/my site"cmd', "expected 'host:port name directory command'"),
+        ('h:80 docs "" cmd', "directory is empty"),
         ("h:80 docs ~dave cmd", "directory '~dave'"),
     ],
 )
