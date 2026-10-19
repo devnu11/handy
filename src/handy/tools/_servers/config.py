@@ -1,8 +1,10 @@
 """The servers config: one `host:port name directory command` entry per logical line.
 
-Physical lines ending in a backslash continue onto the next, as in bash.
-Blank lines and lines starting with `#` are skipped between entries; a `#`
-inside a command is left alone, since shell commands use it too.
+Columns are separated by runs of spaces or tabs, so they can be padded to
+line up; the command is the rest of the line. Physical lines ending in a
+backslash continue onto the next, as in bash. Blank lines, lines starting with
+`#` and the header line (see HEADER) are skipped between entries; a `#` inside
+a command is left alone, since shell commands use it too.
 """
 
 from __future__ import annotations
@@ -20,24 +22,30 @@ _HOST = re.compile(r"(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_][A-Za-z0-9_.-]*")
 # A directory with spaces is quoted: "my dir" or 'my dir'. No escapes inside.
 _ENTRY = re.compile(r"""(\S+)\s+(\S+)\s+("[^"]*"|'[^']*'|[^\s"']\S*)\s+(.*\S)""")
 
+# The column titles that `init` writes as the template's last line. A line of
+# exactly these words (any case) is a header, not an entry.
+HEADER = ("host:port", "name", "directory", "command")
+
 TEMPLATE = """\
-# handy servers — one server per line:
+# handy servers: one server per line, in four columns under the header below.
 #
-#   host:port   name   directory   command
+# Columns are separated by one or more spaces or tabs, so pad them with spaces
+# to line up under the header. The command is everything after the directory.
 #
-# The command runs in a POSIX shell on the remote host, starting in the
-# directory (~, ~/path, a path relative to $HOME, or an absolute path), with
-# SERVER and PORT exported. Chain steps yourself with &&, || or ;. End a line
-# with a backslash to continue the command on the next line.
+#   host:port  where to ssh: host, user@host or an ssh config alias, then :port
+#   name       letters, digits, '_', '.' and '-'; no spaces (it names remote files)
+#   directory  where the command starts: ~, ~/path, a path relative to $HOME, or
+#              an absolute path. Quote it, "~/like this", if it contains spaces.
+#   command    runs in a POSIX shell with SERVER and PORT exported. Chain steps
+#              with &&, || or ;. End a line with \\ to continue on the next line.
 #
-# Lines starting with # are comments. Uncomment and edit an example to start.
-
-# Static files with Python's built-in web server:
-#compute01:8000   docs   ~/site   python3 -m http.server $PORT --bind 0.0.0.0
-
-# A Vue (Vite) dev server:
-#compute02:5173   ui     ~/app    npm run dev -- --host 0.0.0.0 --port $PORT \\
-#                                 --strictPort
+# Lines starting with # are comments. To use an example, delete its leading #.
+#
+# Static files with Python's built-in web server, and a Vue (Vite) dev server:
+#compute01:8000  docs  ~/site      python3 -m http.server $PORT --bind 0.0.0.0
+#compute02:5173  ui    "~/my app"  npm run dev -- --host 0.0.0.0 --port $PORT \\
+#                                  --strictPort
+HOST:PORT       NAME  DIRECTORY   COMMAND
 """
 
 
@@ -93,6 +101,8 @@ def parse(text: str, source: str = "servers") -> list[Server]:
     addresses: dict[tuple[str, int], int] = {}
 
     for lineno, logical in _logical_lines(text):
+        if _is_header(logical):
+            continue
         where = f"{source}:{lineno}"
         try:
             server = _parse_entry(logical, lineno)
@@ -141,6 +151,10 @@ def _logical_lines(text: str):
             i += 1
         parts.append(line)
         yield start, "".join(parts)
+
+
+def _is_header(logical: str) -> bool:
+    return tuple(logical.lower().split()) == HEADER
 
 
 def _parse_entry(logical: str, lineno: int) -> Server:
