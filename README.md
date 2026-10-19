@@ -188,22 +188,24 @@ handy servers status      # what's running where; changes nothing
 
 ### The config
 
-One server per line — `host:port name command` — in `~/.config/handy/servers`
+One server per line — `host:port name directory command` — in `~/.config/handy/servers`
 (or `$XDG_CONFIG_HOME/handy/servers`, or `--config PATH`):
 
 ```
-# host:port          name   command
-compute01:8000       docs   cd ~/site && python3 -m http.server $PORT --bind 0.0.0.0
+# host:port          name   directory   command
+compute01:8000       docs   ~/site      python3 -m http.server $PORT --bind 0.0.0.0
 
 # Long commands continue with a trailing backslash, as in bash.
-compute02:5173       ui     cd ~/app && \
-                            npm run dev -- --host 0.0.0.0 --port $PORT --strictPort
+compute02:5173       ui     ~/app       npm run dev -- --host 0.0.0.0 --port $PORT \
+                                        --strictPort
 ```
 
-The command runs in a POSIX shell starting in `$HOME`, with `SERVER` and `PORT`
-exported. It's passed through verbatim, so chain steps with `&&`, `||` or `;`
-yourself. `user@host` works, as do ssh config aliases. Names become part of
-remote file names, so they're limited to letters, digits, `_`, `.` and `-`.
+The command runs in a POSIX shell starting in the directory, with `SERVER` and
+`PORT` exported. The directory is `~`, `~/path`, a path relative to `$HOME`, or
+an absolute path; if it doesn't exist, the start fails and says so. The command
+is passed through verbatim, so chain steps with `&&`, `||` or `;` yourself.
+`user@host` works, as do ssh config aliases. Names become part of remote file
+names, so they're limited to letters, digits, `_`, `.` and `-`.
 
 The config is deliberately not part of any dotfiles repo: hostnames are often
 not something to publish.
