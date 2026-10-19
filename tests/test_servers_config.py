@@ -1,6 +1,8 @@
 import pytest
 
 from handy.tools._servers.config import (
+    _ENTRY,
+    HEADER,
     TEMPLATE,
     ConfigError,
     Server,
@@ -120,18 +122,50 @@ def test_template_is_valid_and_inert():
     assert parse(TEMPLATE) == []
 
 
-def test_template_examples_parse_once_uncommented():
-    # Uncomment the example entries, and the lines they continue onto.
+def _uncommented_template() -> list[str]:
+    """The template with the example entries, and the lines they continue onto,
+    uncommented by deleting the leading #, as its instructions say."""
     lines, continuing = [], False
     for line in TEMPLATE.splitlines():
         if continuing or line.startswith("#compute"):
             line = line[1:]
         continuing = line.endswith("\\") and not line.startswith("#")
         lines.append(line)
-    servers = parse("\n".join(lines))
+    return lines
+
+
+def _column_starts(line: str) -> list[int]:
+    match = _ENTRY.fullmatch(line)
+    return [match.start(i) for i in range(1, 5)]
+
+
+def test_template_examples_parse_once_uncommented():
+    servers = parse("\n".join(_uncommented_template()))
     assert [s.name for s in servers] == ["docs", "ui"]
+    assert [s.directory for s in servers] == ["~/site", "~/my app"]
     assert servers[1].command.endswith("--strictPort")
     assert "\\" not in servers[1].command
+
+
+def test_template_ends_with_a_header_the_examples_line_up_under():
+    lines = _uncommented_template()
+    header = lines[-1]
+    assert tuple(header.lower().split()) == HEADER
+    for example in (line for line in lines if line.startswith("compute")):
+        assert _column_starts(example) == _column_starts(header)
+
+
+@pytest.mark.parametrize(
+    "header", ["HOST:PORT NAME DIRECTORY COMMAND", "  host:port\tname  directory   command  "]
+)
+def test_header_line_is_skipped_anywhere(header):
+    servers = parse(f"{header}\nh:1  a  ~  cmd\n{header}\n")
+    assert [s.name for s in servers] == ["a"]
+
+
+def test_tabs_and_spaces_both_separate_columns():
+    (server,) = parse("h:1\ta \t ~/x\t\trun\tit\n")
+    assert (server.name, server.directory, server.command) == ("a", "~/x", "run\tit")
 
 
 def test_fingerprint_tracks_definitions_not_order():
