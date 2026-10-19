@@ -110,6 +110,7 @@ def start_call(server: Server, mode: str, resume: bool = False) -> list[str]:
         str(server.port),
         server.hostname,
         mode,
+        server.workdir,
         server.command,
         str(int(resume)),
     ]

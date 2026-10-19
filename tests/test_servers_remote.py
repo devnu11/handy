@@ -57,13 +57,14 @@ def test_ssh_never_prompts():
 
 
 def test_call_shapes():
-    server = Server("docs", "dave@compute01", 8000, "run it")
+    server = Server("docs", "dave@compute01", 8000, "run it", directory="~/site")
     assert remote.start_call(server, "tmux", resume=True) == [
         "hs_start",
         "docs",
         "8000",
         "compute01",
         "tmux",
+        "./site",
         "run it",
         "1",
     ]

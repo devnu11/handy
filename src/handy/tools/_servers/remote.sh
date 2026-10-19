@@ -115,8 +115,8 @@ hs_status() { # name port host
 	hs_report "$1"
 }
 
-hs_start() { # name port host mode command resume
-	_st_name=$1 _st_port=$2 _st_host=$3 _st_mode=$4 _st_cmd=$5 _st_resume=$6
+hs_start() { # name port host mode workdir command resume
+	_st_name=$1 _st_port=$2 _st_host=$3 _st_mode=$4 _st_cd=$5 _st_cmd=$6 _st_resume=$7
 	_st_dir=$(hs_dir "$_st_host")
 	if ! mkdir -p "$_st_dir" 2>/dev/null; then
 		hs_result "$_st_name" failed "$_st_mode" '' '' "cannot create $_st_dir"
@@ -154,8 +154,8 @@ hs_start() { # name port host mode command resume
 	{
 		printf '#!/bin/sh\n# Written by handy servers on every start; edits here are lost.\n'
 		# shellcheck disable=SC2016 # $HOME is for the generated script to expand
-		printf 'SERVER=%s PORT=%s\nexport SERVER PORT\ncd "$HOME" || exit 1\n' \
-			"$(hs_quote "$_st_host")" "$_st_port"
+		printf 'SERVER=%s PORT=%s\nexport SERVER PORT\ncd "$HOME" || exit 1\ncd %s || exit 1\n' \
+			"$(hs_quote "$_st_host")" "$_st_port" "$(hs_quote "$_st_cd")"
 		printf '%s\n' "$_st_cmd"
 	} >"$_st_script"
 	printf '\n=== %s: starting (%s) ===\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$_st_mode" >>"$_st_log"

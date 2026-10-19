@@ -1,4 +1,4 @@
-"""The servers config: one `host:port name command` entry per logical line.
+"""The servers config: one `host:port name directory command` entry per logical line.
 
 Physical lines ending in a backslash continue onto the next, as in bash.
 Blank lines and lines starting with `#` are skipped between entries; a `#`
@@ -21,20 +21,21 @@ _HOST = re.compile(r"(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_][A-Za-z0-9_.-]*")
 TEMPLATE = """\
 # handy servers — one server per line:
 #
-#   host:port   name   command
+#   host:port   name   directory   command
 #
-# The command runs in a POSIX shell on the remote host, starting in $HOME, with
+# The command runs in a POSIX shell on the remote host, starting in the
+# directory (~, ~/path, a path relative to $HOME, or an absolute path), with
 # SERVER and PORT exported. Chain steps yourself with &&, || or ;. End a line
 # with a backslash to continue the command on the next line.
 #
 # Lines starting with # are comments. Uncomment and edit an example to start.
 
 # Static files with Python's built-in web server:
-#compute01:8000   docs   cd ~/site && python3 -m http.server $PORT --bind 0.0.0.0
+#compute01:8000   docs   ~/site   python3 -m http.server $PORT --bind 0.0.0.0
 
 # A Vue (Vite) dev server:
-#compute02:5173   ui     cd ~/app && \\
-#                        npm run dev -- --host 0.0.0.0 --port $PORT --strictPort
+#compute02:5173   ui     ~/app    npm run dev -- --host 0.0.0.0 --port $PORT \\
+#                                 --strictPort
 """
 
 
@@ -52,6 +53,7 @@ class Server:
     host: str  # as given, possibly user@host; this is what ssh connects to
     port: int
     command: str
+    directory: str = "~"  # as given: ~, ~/path, relative to $HOME, or absolute
     line: int = 0
 
     @property
@@ -62,6 +64,14 @@ class Server:
     @property
     def address(self) -> str:
         return f"{self.host}:{self.port}"
+
+    @property
+    def workdir(self) -> str:
+        """The directory as a path to `cd` to from $HOME: absolute, or `./`-relative
+        so that a leading `-` can't be read as an option."""
+        if self.directory.startswith("/"):
+            return self.directory
+        return "./" + self.directory.removeprefix("~").lstrip("/")
 
 
 def default_path() -> Path:
@@ -132,10 +142,22 @@ def _logical_lines(text: str):
 
 
 def _parse_entry(logical: str, lineno: int) -> Server:
-    fields = logical.split(None, 2)
-    if len(fields) < 3:
-        raise ValueError("expected 'host:port name command'")
-    address, name, command = fields
+    address, name, directory, command = _split_entry(logical)
+    host, port = _parse_address(address)
+    _check_name(name)
+    _check_directory(directory)
+    return Server(name, host, port, command, directory=directory, line=lineno)
+
+
+def _split_entry(logical: str) -> list[str]:
+    """The four columns; the command is everything after the directory."""
+    fields = logical.split(None, 3)
+    if len(fields) < 4:
+        raise ValueError("expected 'host:port name directory command'")
+    return [*fields[:3], fields[3].strip()]
+
+
+def _parse_address(address: str) -> tuple[str, int]:
     host, sep, port_text = address.rpartition(":")
     if not sep or not host:
         raise ValueError(f"address {address!r} should be host:port")
@@ -143,19 +165,29 @@ def _parse_entry(logical: str, lineno: int) -> Server:
         raise ValueError(f"host {host!r} has characters that aren't allowed")
     if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
         raise ValueError(f"port {port_text!r} should be a number from 1 to 65535")
+    return host, int(port_text)
+
+
+def _check_name(name: str) -> None:
     if not _NAME.fullmatch(name):
         raise ValueError(
             f"name {name!r} may only use letters, digits, '_', '.' and '-', "
             "and can't start with '.' or '-' (it becomes part of file names)"
         )
-    return Server(name=name, host=host, port=int(port_text), command=command.strip(), line=lineno)
+
+
+def _check_directory(directory: str) -> None:
+    """~user isn't supported: the remote side only knows its own $HOME."""
+    if directory.startswith("~") and directory[1:2] not in ("", "/"):
+        raise ValueError(f"directory {directory!r} should be ~, ~/path or a plain path")
 
 
 def host_fingerprint(servers: list[Server]) -> str:
     """Hash of every entry on one host, so editing any of them invalidates its stamp."""
     digest = hashlib.sha256()
     for server in sorted(servers, key=lambda s: s.name):
-        digest.update(f"{server.name}\0{server.host}\0{server.port}\0{server.command}\n".encode())
+        fields = (server.name, server.host, str(server.port), server.directory, server.command)
+        digest.update(("\0".join(fields) + "\n").encode())
     return digest.hexdigest()[:16]
 
 
