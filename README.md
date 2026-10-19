@@ -188,22 +188,30 @@ handy servers status      # what's running where; changes nothing
 
 ### The config
 
-One server per line — `host:port name command` — in `~/.config/handy/servers`
-(or `$XDG_CONFIG_HOME/handy/servers`, or `--config PATH`):
+One server per line, in four columns, in `~/.config/handy/servers` (or
+`$XDG_CONFIG_HOME/handy/servers`, or `--config PATH`). Columns are separated by
+one or more spaces or tabs, so pad them with spaces to line up; the command is
+everything after the directory. `handy servers init` ends the file with a
+header line to line entries up under (a line of exactly those four words, in
+any case, is skipped):
 
 ```
-# host:port          name   command
-compute01:8000       docs   cd ~/site && python3 -m http.server $PORT --bind 0.0.0.0
+HOST:PORT       NAME  DIRECTORY   COMMAND
+compute01:8000  docs  ~/site      python3 -m http.server $PORT --bind 0.0.0.0
 
 # Long commands continue with a trailing backslash, as in bash.
-compute02:5173       ui     cd ~/app && \
-                            npm run dev -- --host 0.0.0.0 --port $PORT --strictPort
+compute02:5173  ui    "~/my app"  npm run dev -- --host 0.0.0.0 --port $PORT \
+                                  --strictPort
 ```
 
-The command runs in a POSIX shell starting in `$HOME`, with `SERVER` and `PORT`
-exported. It's passed through verbatim, so chain steps with `&&`, `||` or `;`
-yourself. `user@host` works, as do ssh config aliases. Names become part of
-remote file names, so they're limited to letters, digits, `_`, `.` and `-`.
+The command runs in a POSIX shell starting in the directory, with `SERVER` and
+`PORT` exported. The directory is `~`, `~/path`, a path relative to `$HOME`, or
+an absolute path; if it doesn't exist, the start fails and says so. Quote a
+directory that contains spaces: `"~/my app"` or `'~/my app'`. The command
+is passed through verbatim, so chain steps with `&&`, `||` or `;` yourself.
+`user@host` works, as do ssh config aliases. Names become part of remote file
+names and the tmux session name, so they're limited to letters, digits, `_`, `.`
+and `-`: no spaces.
 
 The config is deliberately not part of any dotfiles repo: hostnames are often
 not something to publish.

@@ -59,7 +59,7 @@ class Changes:
 
 
 def diff(old: list[Server], new: list[Server]) -> Changes:
-    """Servers are matched by name; an entry differs if its address or command does."""
+    """Servers are matched by name; an entry differs if its address, directory or command does."""
     before = {s.name: s for s in old}
     after = {s.name: s for s in new}
     changes = Changes()
@@ -73,7 +73,7 @@ def diff(old: list[Server], new: list[Server]) -> Changes:
 
 
 def _definition(server: Server) -> tuple:
-    return (server.host, server.port, server.command)
+    return (server.host, server.port, server.directory, server.command)
 
 
 def edit_until_valid(

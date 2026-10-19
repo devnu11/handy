@@ -1,8 +1,10 @@
-"""The servers config: one `host:port name command` entry per logical line.
+"""The servers config: one `host:port name directory command` entry per logical line.
 
-Physical lines ending in a backslash continue onto the next, as in bash.
-Blank lines and lines starting with `#` are skipped between entries; a `#`
-inside a command is left alone, since shell commands use it too.
+Columns are separated by runs of spaces or tabs, so they can be padded to
+line up; the command is the rest of the line. Physical lines ending in a
+backslash continue onto the next, as in bash. Blank lines, lines starting with
+`#` and the header line (see HEADER) are skipped between entries; a `#` inside
+a command is left alone, since shell commands use it too.
 """
 
 from __future__ import annotations
@@ -17,24 +19,33 @@ from pathlib import Path
 _NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 # Hosts are interpolated into a generated shell script and ssh argv.
 _HOST = re.compile(r"(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_][A-Za-z0-9_.-]*")
+# A directory with spaces is quoted: "my dir" or 'my dir'. No escapes inside.
+_ENTRY = re.compile(r"""(\S+)\s+(\S+)\s+("[^"]*"|'[^']*'|[^\s"']\S*)\s+(.*\S)""")
+
+# The column titles that `init` writes as the template's last line. A line of
+# exactly these words (any case) is a header, not an entry.
+HEADER = ("host:port", "name", "directory", "command")
 
 TEMPLATE = """\
-# handy servers — one server per line:
+# handy servers: one server per line, in four columns under the header below.
 #
-#   host:port   name   command
+# Columns are separated by one or more spaces or tabs, so pad them with spaces
+# to line up under the header. The command is everything after the directory.
 #
-# The command runs in a POSIX shell on the remote host, starting in $HOME, with
-# SERVER and PORT exported. Chain steps yourself with &&, || or ;. End a line
-# with a backslash to continue the command on the next line.
+#   host:port  where to ssh: host, user@host or an ssh config alias, then :port
+#   name       letters, digits, '_', '.' and '-'; no spaces (it names remote files)
+#   directory  where the command starts: ~, ~/path, a path relative to $HOME, or
+#              an absolute path. Quote it, "~/like this", if it contains spaces.
+#   command    runs in a POSIX shell with SERVER and PORT exported. Chain steps
+#              with &&, || or ;. End a line with \\ to continue on the next line.
 #
-# Lines starting with # are comments. Uncomment and edit an example to start.
-
-# Static files with Python's built-in web server:
-#compute01:8000   docs   cd ~/site && python3 -m http.server $PORT --bind 0.0.0.0
-
-# A Vue (Vite) dev server:
-#compute02:5173   ui     cd ~/app && \\
-#                        npm run dev -- --host 0.0.0.0 --port $PORT --strictPort
+# Lines starting with # are comments. To use an example, delete its leading #.
+#
+# Static files with Python's built-in web server, and a Vue (Vite) dev server:
+#compute01:8000  docs  ~/site      python3 -m http.server $PORT --bind 0.0.0.0
+#compute02:5173  ui    "~/my app"  npm run dev -- --host 0.0.0.0 --port $PORT \\
+#                                  --strictPort
+HOST:PORT       NAME  DIRECTORY   COMMAND
 """
 
 
@@ -52,6 +63,7 @@ class Server:
     host: str  # as given, possibly user@host; this is what ssh connects to
     port: int
     command: str
+    directory: str = "~"  # as given: ~, ~/path, relative to $HOME, or absolute
     line: int = 0
 
     @property
@@ -62,6 +74,14 @@ class Server:
     @property
     def address(self) -> str:
         return f"{self.host}:{self.port}"
+
+    @property
+    def workdir(self) -> str:
+        """The directory as a path to `cd` to from $HOME: absolute, or `./`-relative
+        so that a leading `-` can't be read as an option."""
+        if self.directory.startswith("/"):
+            return self.directory
+        return "./" + self.directory.removeprefix("~").lstrip("/")
 
 
 def default_path() -> Path:
@@ -81,6 +101,8 @@ def parse(text: str, source: str = "servers") -> list[Server]:
     addresses: dict[tuple[str, int], int] = {}
 
     for lineno, logical in _logical_lines(text):
+        if _is_header(logical):
+            continue
         where = f"{source}:{lineno}"
         try:
             server = _parse_entry(logical, lineno)
@@ -131,11 +153,35 @@ def _logical_lines(text: str):
         yield start, "".join(parts)
 
 
+def _is_header(logical: str) -> bool:
+    return tuple(logical.lower().split()) == HEADER
+
+
 def _parse_entry(logical: str, lineno: int) -> Server:
-    fields = logical.split(None, 2)
-    if len(fields) < 3:
-        raise ValueError("expected 'host:port name command'")
-    address, name, command = fields
+    address, name, directory, command = _split_entry(logical)
+    host, port = _parse_address(address)
+    _check_name(name)
+    _check_directory(directory)
+    return Server(name, host, port, command, directory=directory, line=lineno)
+
+
+def _split_entry(logical: str) -> list[str]:
+    """The four columns, with quotes taken off the directory; the command is
+    everything after the directory."""
+    match = _ENTRY.fullmatch(logical.strip())
+    if not match:
+        raise ValueError(
+            "expected 'host:port name directory command' (quote a directory that contains spaces)"
+        )
+    address, name, directory, command = match.groups()
+    return [address, name, _unquote(directory), command]
+
+
+def _unquote(field: str) -> str:
+    return field[1:-1] if field[:1] in "\"'" else field
+
+
+def _parse_address(address: str) -> tuple[str, int]:
     host, sep, port_text = address.rpartition(":")
     if not sep or not host:
         raise ValueError(f"address {address!r} should be host:port")
@@ -143,19 +189,31 @@ def _parse_entry(logical: str, lineno: int) -> Server:
         raise ValueError(f"host {host!r} has characters that aren't allowed")
     if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
         raise ValueError(f"port {port_text!r} should be a number from 1 to 65535")
+    return host, int(port_text)
+
+
+def _check_name(name: str) -> None:
     if not _NAME.fullmatch(name):
         raise ValueError(
             f"name {name!r} may only use letters, digits, '_', '.' and '-', "
             "and can't start with '.' or '-' (it becomes part of file names)"
         )
-    return Server(name=name, host=host, port=int(port_text), command=command.strip(), line=lineno)
+
+
+def _check_directory(directory: str) -> None:
+    """~user isn't supported: the remote side only knows its own $HOME."""
+    if not directory:
+        raise ValueError("directory is empty; use ~ for $HOME")
+    if directory.startswith("~") and directory[1:2] not in ("", "/"):
+        raise ValueError(f"directory {directory!r} should be ~, ~/path or a plain path")
 
 
 def host_fingerprint(servers: list[Server]) -> str:
     """Hash of every entry on one host, so editing any of them invalidates its stamp."""
     digest = hashlib.sha256()
     for server in sorted(servers, key=lambda s: s.name):
-        digest.update(f"{server.name}\0{server.host}\0{server.port}\0{server.command}\n".encode())
+        fields = (server.name, server.host, str(server.port), server.directory, server.command)
+        digest.update(("\0".join(fields) + "\n").encode())
     return digest.hexdigest()[:16]
 
 

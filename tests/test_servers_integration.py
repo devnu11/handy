@@ -119,7 +119,7 @@ def status_of(env: Env, name: str) -> str:
 
 def test_start_status_and_serve(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     result = env.cli("start")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "started (pid" in result.stdout
@@ -129,7 +129,7 @@ def test_start_status_and_serve(env):
 
 def test_start_is_idempotent(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     first = env.pid("it-web")
     again = env.cli("start", "it-web")  # named, so it really checks
@@ -139,7 +139,7 @@ def test_start_is_idempotent(env):
 
 def test_crashed_server_is_restarted(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     first = env.pid("it-web")
     os.killpg(first, signal.SIGKILL)
@@ -154,7 +154,7 @@ def test_crashed_server_is_restarted(env):
 def test_stop_kills_everything_the_command_spawned(env):
     port = free_port()
     child = env.root / "child.pid"
-    env.write(f"localhost:{port} it-web {SERVE} & echo $! > {child}; wait\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE} & echo $! > {child}; wait\n")
     env.cli("start")
     assert wait_for(child.exists)
     child_pid = int(child.read_text())
@@ -170,7 +170,7 @@ def test_foreign_process_on_the_port_is_not_trampled(env):
     with socket.socket() as squatter:
         squatter.bind(("127.0.0.1", port))
         squatter.listen()
-        env.write(f"localhost:{port} it-web {SERVE}\n")
+        env.write(f"localhost:{port} it-web ~ {SERVE}\n")
         result = env.cli("start")
         assert "port-conflict" in result.stdout
         assert result.returncode == 1
@@ -180,7 +180,7 @@ def test_foreign_process_on_the_port_is_not_trampled(env):
 def test_concurrent_logins_launch_exactly_once(env):
     port = free_port()
     launches = env.root / "launches"
-    env.write(f"localhost:{port} it-web echo x >> {launches}; exec {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ echo x >> {launches}; exec {SERVE}\n")
     with ThreadPoolExecutor(5) as pool:
         results = list(pool.map(lambda _: env.cli("start", "--quiet"), range(5)))
     assert all(r.returncode == 0 for r in results), [r.stdout for r in results]
@@ -193,7 +193,7 @@ def test_two_machines_racing_still_launch_once(env):
     remote start lock stands between them, even with --force."""
     port = free_port()
     launches = env.root / "launches"
-    env.write(f"localhost:{port} it-web echo x >> {launches}; exec {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ echo x >> {launches}; exec {SERVE}\n")
     states = [env.root / "machine-a", env.root / "machine-b", env.root / "machine-c"]
     with ThreadPoolExecutor(3) as pool:
         list(pool.map(lambda s: env.cli("start", "--force", state=s), states))
@@ -202,7 +202,7 @@ def test_two_machines_racing_still_launch_once(env):
 
 def test_rate_limit_skips_and_says_so(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     calls = env.ssh_calls()
 
@@ -220,7 +220,7 @@ def test_rate_limit_skips_and_says_so(env):
 
 def test_stop_holds_until_started_by_name(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     env.cli("stop")
     blanket = env.cli("start")  # what the login hook runs
@@ -233,9 +233,9 @@ def test_stop_holds_until_started_by_name(env):
 
 def test_config_change_invalidates_the_rate_limit(env):
     port, other = free_port(), free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
-    env.write(f"localhost:{port} it-web {SERVE}\nlocalhost:{other} it-two {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\nlocalhost:{other} it-two ~ {SERVE}\n")
     result = env.cli("start")
     assert "verified" not in result.stdout
     assert "it-two" in result.stdout and "started" in result.stdout
@@ -243,7 +243,7 @@ def test_config_change_invalidates_the_rate_limit(env):
 
 def test_status_is_pure(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     result = env.cli("status")
     assert result.returncode == 1
     assert "down" in result.stdout
@@ -253,21 +253,37 @@ def test_status_is_pure(env):
 
 def test_logs_show_output(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     assert wait_for(lambda: answers(port))
     assert wait_for(lambda: "GET /" in env.cli("logs", "it-web").stdout)
 
 
+def test_command_starts_in_the_directory(env):
+    port = free_port()
+    (env.remote_home / "my site").mkdir(parents=True)
+    env.write(f"localhost:{port} it-web '~/my site' pwd > {env.root / 'cwd'}; exec {SERVE}\n")
+    assert "started" in env.cli("start").stdout
+    assert wait_for(lambda: (env.root / "cwd").exists())
+    assert Path((env.root / "cwd").read_text().strip()).name == "my site"
+
+
+def test_missing_directory_is_reported(env):
+    env.write(f"localhost:{free_port()} it-bad ~/nowhere {SERVE}\n")
+    result = env.cli("start")
+    assert result.returncode == 1
+    assert "failed" in result.stdout and "nowhere" in result.stdout
+
+
 def test_immediate_failure_is_reported(env):
-    env.write(f"localhost:{free_port()} it-bad echo boom; exit 3\n")
+    env.write(f"localhost:{free_port()} it-bad ~ echo boom; exit 3\n")
     result = env.cli("start")
     assert result.returncode == 1
     assert "failed" in result.stdout and "boom" in result.stdout
 
 
 def test_unreachable_host_is_reported_and_rate_limited(env):
-    env.write("unreachable-box:80 it-web cmd\n")
+    env.write("unreachable-box:80 it-web ~ cmd\n")
     first = env.cli("start")
     assert "unreachable" in first.stdout and "Connection refused" in first.stdout
     assert first.returncode == 1
@@ -277,7 +293,7 @@ def test_unreachable_host_is_reported_and_rate_limited(env):
 
 def test_restart_replaces_the_process(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     first = env.pid("it-web")
     result = env.cli("restart")
@@ -303,7 +319,7 @@ def test_bad_config_is_reported_with_line_numbers(env):
 @needs_tmux
 def test_tmux_mode(env):
     port = free_port()
-    env.write(f"localhost:{port} it-tmux {SERVE}\n")
+    env.write(f"localhost:{port} it-tmux ~ {SERVE}\n")
     result = env.cli("start", "--tmux")
     assert "started" in result.stdout
     assert wait_for(lambda: answers(port))
@@ -325,7 +341,7 @@ def test_tmux_mode(env):
 
 def test_attach_explains_nohup_mode(env):
     port = free_port()
-    env.write(f"localhost:{port} it-web {SERVE}\n")
+    env.write(f"localhost:{port} it-web ~ {SERVE}\n")
     env.cli("start")
     result = env.cli("attach", "it-web")
     assert result.returncode == 1

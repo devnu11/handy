@@ -25,6 +25,11 @@ def test_diff_classifies_changes():
     assert changes.hosts() == {"h", "h2", "h3", "h4"}
 
 
+def test_a_new_directory_is_a_change():
+    changes = edit.diff([Server("a", "h", 1, "x")], [Server("a", "h", 1, "x", "~/elsewhere")])
+    assert changes.describe() == "restart a"
+
+
 def test_no_changes_is_falsy():
     servers = [Server("a", "h", 1, "x")]
     assert not edit.diff(servers, list(servers))
@@ -43,29 +48,32 @@ def _editor_writing(path: Path, *contents: str):
 
 def test_valid_edit_returns_before_and_after(tmp_path):
     path = tmp_path / "servers"
-    path.write_text("h:1 a old\n")
-    before, after = edit.edit_until_valid(path, run_editor=_editor_writing(path, "h:1 a new\n"))
+    path.write_text("h:1 a ~ old\n")
+    before, after = edit.edit_until_valid(path, run_editor=_editor_writing(path, "h:1 a ~ new\n"))
     assert before[0].command == "old"
     assert after[0].command == "new"
 
 
 def test_invalid_edit_loops_until_fixed(tmp_path):
     path = tmp_path / "servers"
-    path.write_text("h:1 a x\n")
+    path.write_text("h:1 a ~ x\n")
     said = []
     _, after = edit.edit_until_valid(
         path,
-        run_editor=_editor_writing(path, "broken\n", "h:1 a fixed\n"),
+        run_editor=_editor_writing(path, "broken\n", "h:1 a ~ fixed\n"),
         ask=lambda prompt: "e",
         say=said.append,
     )
     assert after[0].command == "fixed"
-    assert said == ["handy servers: servers:1: expected 'host:port name command'"]
+    assert said == [
+        "handy servers: servers:1: expected 'host:port name directory command' "
+        "(quote a directory that contains spaces)"
+    ]
 
 
 def test_quitting_leaves_file_invalid(tmp_path):
     path = tmp_path / "servers"
-    path.write_text("h:1 a x\n")
+    path.write_text("h:1 a ~ x\n")
     _, after = edit.edit_until_valid(
         path, run_editor=_editor_writing(path, "broken\n"), ask=lambda p: "q", say=lambda m: None
     )
@@ -75,7 +83,7 @@ def test_quitting_leaves_file_invalid(tmp_path):
 
 def test_non_interactive_never_prompts(tmp_path):
     path = tmp_path / "servers"
-    path.write_text("h:1 a x\n")
+    path.write_text("h:1 a ~ x\n")
 
     def ask(prompt):
         raise AssertionError("prompted without a terminal")
