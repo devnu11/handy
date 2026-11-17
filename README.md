@@ -42,6 +42,10 @@ uv tool install --editable .
 | `conformance-report` | Report conformance pass rates against a minimum. |
 | `perf-report` | Compare performance measurements against expected values. |
 | `confluence-block` | Replace one named block of a Confluence page. |
+| `teamcity-query` | Fetch finished TeamCity builds, official and personal, as JSON. |
+| `teamcity-stats` | Pass rates and queue times from those builds, official vs personal. |
+| `teamcity-dashboard` | Render the stats as a PNG dashboard. |
+| `teamcity-report` | All three of the above in one go, for cron. |
 | `servers` | Start, stop and watch servers on remote hosts over ssh. |
 
 ## The Jira report pipeline
@@ -171,6 +175,57 @@ uv run handy confluence-block --page-id 123456 --name perf --image perf.png \
 `--init` appends the marker pair on the first run. If a later run reports the
 markers missing, someone's rich-text edit stripped the HTML comments and the
 block needs `--init` again.
+
+## The TeamCity dashboard pipeline
+
+Same shape as the Jira pipeline: three small stages that hand JSON to the next,
+plus one command that runs them all.
+
+```sh
+export TEAMCITY_URL=https://teamcity.internal
+export TEAMCITY_TOKEN=...                    # Profile -> Access Tokens
+
+uv run handy teamcity-query --project Gpu --since 7d -o builds.json
+uv run handy teamcity-stats builds.json -o stats.json
+uv run handy teamcity-dashboard stats.json -o teamcity.png --title 'GPU CI'
+
+# or, for cron:
+uv run handy teamcity-report --project Gpu --since 7d --out-dir ~/reports --name gpu-ci
+```
+
+Publish the PNG with `confluence-publish` or `confluence-block`.
+
+Filters on `teamcity-query` / `teamcity-report`:
+
+| Flag | Effect |
+| --- | --- |
+| `--since 36h\|7d\|2w` | Window, by build finish time. Default `7d`. |
+| `--project ID` | A project and all its subprojects. |
+| `--build-type ID` | One build configuration. |
+| `--personal any\|true\|false` | Both kinds (default), personal only, or official only. |
+| `--user NAME` | Owner of a personal build; whoever triggered an official one. |
+| `--branch LOCATOR` | TeamCity branch locator. Default `default:any`, every branch. |
+| `--locator DIMS` | Raw locator dimensions appended as-is, e.g. `tag:nightly`. |
+
+`teamcity-stats --group-by build-type|project|pool|user` picks what the per-row
+breakdown is keyed on; `pool` is the one to use when hunting queue time.
+
+Notes on what the numbers mean:
+
+- **Official vs personal** is TeamCity's own `personal` flag on the build.
+  Everything not personal is official.
+- **Pass rate** is `passed / (passed + failed)`. Canceled builds say nothing
+  about the code, so they are counted separately and left out of the rate. A
+  build that failed to start counts as failed.
+- **Queue time** is `startDate - queuedDate`. For a build in a chain that
+  includes time spent waiting on snapshot dependencies, not only the wait for
+  an agent. Median, p90 (nearest-rank), mean and max are reported.
+- **Finished builds only.** Builds still sitting in the queue are not sampled,
+  so when the queue is backed up the reported waits lag the real ones.
+- **Days** in the trend panels are UTC dates of the finish time.
+- The query spells out `personal`, `canceled`, `failedToStart` and `branch` in
+  the locator, because TeamCity's default filter otherwise silently drops
+  personal, canceled and non-default-branch builds.
 
 ## Servers on hosts you can't run services on
 
